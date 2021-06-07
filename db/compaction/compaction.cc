@@ -294,58 +294,60 @@ bool Compaction::IsTrivialMove() const {
   // filter to be applied to that level, and thus cannot be a trivial move.
 
   // Check if start level have files with overlapping ranges
-  if (start_level_ == 0 && input_vstorage_->level0_non_overlapping() == false) {
-    // We cannot move files from L0 to L1 if the files are overlapping
-    return false;
+  if (start_level_ == 0 && input_vstorage_->level0_non_overlapping()) {
+    //  move files from L0 to L1 if the files are non overlapping
+    return true;
   }
 
-  if (is_manual_compaction_ &&
-      (immutable_options_.compaction_filter != nullptr ||
-       immutable_options_.compaction_filter_factory != nullptr)) {
-    // This is a manual compaction and we have a compaction filter that should
-    // be executed, we cannot do a trivial move
-    return false;
-  }
+  return false;
 
-  // Used in universal compaction, where trivial move can be done if the
-  // input files are non overlapping
-  if ((mutable_cf_options_.compaction_options_universal.allow_trivial_move) &&
-      (output_level_ != 0)) {
-    return is_trivial_move_;
-  }
+  // if (is_manual_compaction_ &&
+  //     (immutable_options_.compaction_filter != nullptr ||
+  //      immutable_options_.compaction_filter_factory != nullptr)) {
+  //   // This is a manual compaction and we have a compaction filter that should
+  //   // be executed, we cannot do a trivial move
+  //   return false;
+  // }
 
-  if (!(start_level_ != output_level_ && num_input_levels() == 1 &&
-          input(0, 0)->fd.GetPathId() == output_path_id() &&
-          InputCompressionMatchesOutput())) {
-    return false;
-  }
+  // // Used in universal compaction, where trivial move can be done if the
+  // // input files are non overlapping
+  // if ((mutable_cf_options_.compaction_options_universal.allow_trivial_move) &&
+  //     (output_level_ != 0)) {
+  //   return is_trivial_move_;
+  // }
 
-  // assert inputs_.size() == 1
+  // if (!(start_level_ != output_level_ && num_input_levels() == 1 &&
+  //         input(0, 0)->fd.GetPathId() == output_path_id() &&
+  //         InputCompressionMatchesOutput())) {
+  //   return false;
+  // }
 
-  std::unique_ptr<SstPartitioner> partitioner = CreateSstPartitioner();
+  // // assert inputs_.size() == 1
 
-  for (const auto& file : inputs_.front().files) {
-    std::vector<FileMetaData*> file_grand_parents;
-    if (output_level_ + 1 >= number_levels_) {
-      continue;
-    }
-    input_vstorage_->GetOverlappingInputs(output_level_ + 1, &file->smallest,
-                                          &file->largest, &file_grand_parents);
-    const auto compaction_size =
-        file->fd.GetFileSize() + TotalFileSize(file_grand_parents);
-    if (compaction_size > max_compaction_bytes_) {
-      return false;
-    }
+  // std::unique_ptr<SstPartitioner> partitioner = CreateSstPartitioner();
 
-    if (partitioner.get() != nullptr) {
-      if (!partitioner->CanDoTrivialMove(file->smallest.user_key(),
-                                         file->largest.user_key())) {
-        return false;
-      }
-    }
-  }
+  // for (const auto& file : inputs_.front().files) {
+  //   std::vector<FileMetaData*> file_grand_parents;
+  //   if (output_level_ + 1 >= number_levels_) {
+  //     continue;
+  //   }
+  //   input_vstorage_->GetOverlappingInputs(output_level_ + 1, &file->smallest,
+  //                                         &file->largest, &file_grand_parents);
+  //   const auto compaction_size =
+  //       file->fd.GetFileSize() + TotalFileSize(file_grand_parents);
+  //   if (compaction_size > max_compaction_bytes_) {
+  //     return false;
+  //   }
 
-  return true;
+  //   if (partitioner.get() != nullptr) {
+  //     if (!partitioner->CanDoTrivialMove(file->smallest.user_key(),
+  //                                        file->largest.user_key())) {
+  //       return false;
+  //     }
+  //   }
+  // }
+
+  // return true;
 }
 
 void Compaction::AddInputDeletions(VersionEdit* out_edit) {

@@ -7,6 +7,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 #include <cinttypes>
+#include <iostream>
 
 #include "db/builder.h"
 #include "db/db_impl/db_impl.h"
@@ -2411,6 +2412,7 @@ void DBImpl::SchedulePendingFlush(const FlushRequest& flush_req,
 void DBImpl::SchedulePendingCompaction(ColumnFamilyData* cfd) {
   mutex_.AssertHeld();
   if (!cfd->queued_for_compaction() && cfd->NeedsCompaction()) {
+    // std::cout << "need compaction" << std::endl;
     AddToCompactionQueue(cfd);
     ++unscheduled_compactions_;
   }
@@ -2620,6 +2622,9 @@ void DBImpl::BackgroundCallFlush(Env::Priority thread_pri) {
       mutex_.Lock();
     }
 
+    // std::cout << "flushed\n";
+    // versions_->GetColumnFamilySet()->GetColumnFamily("default")->PrintFiles();
+    // std::cout << "\n"
     TEST_SYNC_POINT("DBImpl::BackgroundCallFlush:FlushFinish:0");
     ReleaseFileNumberFromPendingOutputs(pending_outputs_inserted_elem);
 
@@ -2936,6 +2941,10 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
                                   log_buffer));
       TEST_SYNC_POINT("DBImpl::BackgroundCompaction():AfterPickCompaction");
 
+      if (!c) {
+        std::cout << "empty compaction" << std::endl;
+      }
+
       if (c != nullptr) {
         bool enough_room = EnoughRoomForCompaction(
             cfd, *(c->inputs()), &sfm_reserved_compact_space, log_buffer);
@@ -3018,6 +3027,9 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
     TEST_SYNC_POINT_CALLBACK("DBImpl::BackgroundCompaction:AfterCompaction",
                              c->column_family_data());
   } else if (!trivial_move_disallowed && c->IsTrivialMove()) {
+    // std::cout << "trivial move to " << c->output_level() << std::endl;
+    // c->column_family_data()->PrintFiles();
+    // std::cout << "\n";
     TEST_SYNC_POINT("DBImpl::BackgroundCompaction:TrivialMove");
     TEST_SYNC_POINT_CALLBACK("DBImpl::BackgroundCompaction:BeforeCompaction",
                              c->column_family_data());
@@ -3160,6 +3172,13 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
       InstallSuperVersionAndScheduleWork(c->column_family_data(),
                                          &job_context->superversion_contexts[0],
                                          *c->mutable_cf_options());
+      // std::cout << "compacted files ";
+      // for (auto f : *(c->inputs(0))) {
+      //   std::cout << f->raw_key_size + f->raw_value_size << " ";
+      // }
+      // std::cout << "to level " << output_level << std::endl;
+      // c->column_family_data()->PrintFiles();
+      // std::cout << "\n";
     }
     *made_progress = true;
     TEST_SYNC_POINT_CALLBACK("DBImpl::BackgroundCompaction:AfterCompaction",
