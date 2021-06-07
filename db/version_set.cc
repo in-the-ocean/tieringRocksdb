@@ -2427,7 +2427,8 @@ void VersionStorageInfo::ComputeCompensatedSizes() {
 }
 
 int VersionStorageInfo::MaxInputLevel() const {
-  if (compaction_style_ == kCompactionStyleLevel) {
+  if (compaction_style_ == kCompactionStyleLevel || 
+      compaction_style_ == kCompactionStyleUniversal) {
     return num_levels() - 2;
   }
   return 0;
@@ -2575,21 +2576,21 @@ void VersionStorageInfo::ComputeCompactionScore(
           num_sorted_runs++;
         }
       }
-      if (compaction_style_ == kCompactionStyleUniversal) {
-        // For universal compaction, we use level0 score to indicate
-        // compaction score for the whole DB. Adding other levels as if
-        // they are L0 files.
-        for (int i = 1; i < num_levels(); i++) {
-          // Its possible that a subset of the files in a level may be in a
-          // compaction, due to delete triggered compaction or trivial move.
-          // In that case, the below check may not catch a level being
-          // compacted as it only checks the first file. The worst that can
-          // happen is a scheduled compaction thread will find nothing to do.
-          if (!files_[i].empty() && !files_[i][0]->being_compacted) {
-            num_sorted_runs++;
-          }
-        }
-      }
+      // if (compaction_style_ == kCompactionStyleUniversal) {
+      //   // For universal compaction, we use level0 score to indicate
+      //   // compaction score for the whole DB. Adding other levels as if
+      //   // they are L0 files.
+      //   for (int i = 1; i < num_levels(); i++) {
+      //     // Its possible that a subset of the files in a level may be in a
+      //     // compaction, due to delete triggered compaction or trivial move.
+      //     // In that case, the below check may not catch a level being
+      //     // compacted as it only checks the first file. The worst that can
+      //     // happen is a scheduled compaction thread will find nothing to do.
+      //     if (!files_[i].empty() && !files_[i][0]->being_compacted) {
+      //       num_sorted_runs++;
+      //     }
+      //   }
+      // }
 
       if (compaction_style_ == kCompactionStyleFIFO) {
         score = static_cast<double>(total_size) /
@@ -2610,7 +2611,8 @@ void VersionStorageInfo::ComputeCompactionScore(
       } else {
         score = static_cast<double>(num_sorted_runs) /
                 mutable_cf_options.level0_file_num_compaction_trigger;
-        if (compaction_style_ == kCompactionStyleLevel && num_levels() > 1) {
+        if ((compaction_style_ == kCompactionStyleLevel || compaction_style_ == 
+             kCompactionStyleUniversal) && num_levels() > 1) {
           // Level-based involves L0->L0 compactions that can lead to oversized
           // L0 files. Take into account size as well to avoid later giant
           // compactions to the base level.
@@ -3401,16 +3403,16 @@ void VersionStorageInfo::CalculateBaseBytes(const ImmutableOptions& ioptions,
   // Special logic to set number of sorted runs.
   // It is to match the previous behavior when all files are in L0.
   int num_l0_count = static_cast<int>(files_[0].size());
-  if (compaction_style_ == kCompactionStyleUniversal) {
-    // For universal compaction, we use level0 score to indicate
-    // compaction score for the whole DB. Adding other levels as if
-    // they are L0 files.
-    for (int i = 1; i < num_levels(); i++) {
-      if (!files_[i].empty()) {
-        num_l0_count++;
-      }
-    }
-  }
+  // if (compaction_style_ == kCompactionStyleUniversal) {
+  //   // For universal compaction, we use level0 score to indicate
+  //   // compaction score for the whole DB. Adding other levels as if
+  //   // they are L0 files.
+  //   for (int i = 1; i < num_levels(); i++) {
+  //     if (!files_[i].empty()) {
+  //       num_l0_count++;
+  //     }
+  //   }
+  // }
   set_l0_delay_trigger_count(num_l0_count);
 
   level_max_bytes_.resize(ioptions.num_levels);
@@ -5444,14 +5446,18 @@ InternalIterator* VersionSet::MakeInputIterator(
   // Level-0 files have to be merged together.  For other levels,
   // we will make a concatenating iterator per level.
   // TODO(opt): use concatenating iterator for level-0 if there is no overlap
-  const size_t space = (c->level() == 0 ? c->input_levels(0)->num_files +
-                                              c->num_input_levels() - 1
-                                        : c->num_input_levels());
+  // const size_t space = (c->level() == 0 ? c->input_levels(0)->num_files +
+  //                                             c->num_input_levels() - 1
+  //                                       : c->num_input_levels());
+  size_t space = 0;
+  for (size_t i = 0; i < c->num_input_levels(); i++) {
+    space += c->input_levels(i)->num_files;
+  }
   InternalIterator** list = new InternalIterator* [space];
   size_t num = 0;
   for (size_t which = 0; which < c->num_input_levels(); which++) {
     if (c->input_levels(which)->num_files != 0) {
-      if (c->level(which) == 0) {
+      // if (c->level(which) == 0) {
         const LevelFilesBrief* flevel = c->input_levels(which);
         for (size_t i = 0; i < flevel->num_files; i++) {
           list[num++] = cfd->table_cache()->NewIterator(
@@ -5468,18 +5474,18 @@ InternalIterator* VersionSet::MakeInputIterator(
               /*largest_compaction_key=*/nullptr,
               /*allow_unprepared_value=*/false);
         }
-      } else {
-        // Create concatenating iterator for the files from this level
-        list[num++] = new LevelIterator(
-            cfd->table_cache(), read_options, file_options_compactions,
-            cfd->internal_comparator(), c->input_levels(which),
-            c->mutable_cf_options()->prefix_extractor.get(),
-            /*should_sample=*/false,
-            /*no per level latency histogram=*/nullptr,
-            TableReaderCaller::kCompaction, /*skip_filters=*/false,
-            /*level=*/static_cast<int>(c->level(which)), range_del_agg,
-            c->boundaries(which));
-      }
+      // } else {
+      //   // Create concatenating iterator for the files from this level
+      //   list[num++] = new LevelIterator(
+      //       cfd->table_cache(), read_options, file_options_compactions,
+      //       cfd->internal_comparator(), c->input_levels(which),
+      //       c->mutable_cf_options()->prefix_extractor.get(),
+      //       /*should_sample=*/false,
+      //       /*no per level latency histogram=*/nullptr,
+      //       TableReaderCaller::kCompaction, /*skip_filters=*/false,
+      //       /*level=*/static_cast<int>(c->level(which)), range_del_agg,
+      //       c->boundaries(which));
+      // }
     }
   }
   assert(num <= space);
